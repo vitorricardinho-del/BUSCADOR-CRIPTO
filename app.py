@@ -73,4 +73,8 @@ if __name__ == '__main__':
     # Em produção (Railway) o gunicorn cuida de servir a aplicação -
     # esse bloco só roda quando você executa "python app.py" localmente.
     porta = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, port=porta)
+
+    # host='0.0.0.0' abre o servidor pra outros dispositivos na sua rede
+    # local (ex: testar pelo celular). Com '127.0.0.1' (padrão) só sua
+    # própria máquina consegue acessar.
+    app.run(host='0.0.0.0', port=porta, debug=True)

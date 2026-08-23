@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Intelligence // Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+
+  :root{
+    --void:        #05070d;
+    --panel:       #0a0f1c;
+    --panel-2:     #0e1526;
+    --line:        #1b2740;
+    --line-bright: #2a3d63;
+    --cyan:        #00e5ff;
+    --violet:      #7c4dff;
+    --green:       #00ff9d;
+    --red:         #ff3d5a;
+    --text:        #dbe6ff;
+    --muted:       #5b6b8c;
+    --font-display: 'Orbitron', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+
+  html{ scroll-behavior:smooth; }
+
+  body{
+    background: var(--void);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+
+  /* ---- ambient hex-grid backdrop ---- */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity:.15;
+    pointer-events:none;
+    z-index:0;
+    mask-image: radial-gradient(ellipse at 50% 0%, black 0%, transparent 75%);
+  }
+
+  /* ---- slow scanline sweep, signature motion ---- */
+  body::after{
+    content:"";
+    position:fixed; left:0; right:0; height:140px;
+    background: linear-gradient(to bottom, transparent, rgba(0,229,255,0.05), transparent);
+    animation: sweep 9s linear infinite;
+    pointer-events:none;
+    z-index:1;
+  }
+  @keyframes sweep{
+    0%   { top:-140px; }
+    100% { top:100vh; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    body::after{ animation:none; display:none; }
+  }
+
+  .shell{ position:relative; z-index:2; max-width:1280px; margin:0 auto; padding:28px 20px 60px; }
+
+  /* ---------------- HEADER ---------------- */
+  .topbar{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:14px; }
+
+  .eyebrow{
+    font-size:.68rem; letter-spacing:.35em; color:var(--cyan);
+    text-transform:uppercase; opacity:.85;
+  }
+  .eyebrow::before{ content:"◆ "; color:var(--violet); }
+
+  h1{
+    font-family: var(--font-display);
+    font-weight:900;
+    font-size: clamp(1.6rem, 4vw, 2.6rem);
+    letter-spacing:.06em;
+    text-align:center;
+    background: linear-gradient(90deg, var(--cyan), var(--violet) 70%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow: 0 0 40px rgba(0,229,255,.25);
+  }
+
+  .subtitle{ color:var(--muted); font-size:.8rem; letter-spacing:.05em; text-align:center; }
+
+  /* status ticker */
+  .ticker-wrap{
+    margin-top:16px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    overflow:hidden; white-space:nowrap; background: var(--panel);
+  }
+  .ticker{
+    display:inline-block; padding:7px 0;
+    font-size:.72rem; letter-spacing:.08em; color:var(--muted);
+    animation: ticker-scroll 22s linear infinite;
+  }
+  .ticker span{ color:var(--green); margin:0 28px; }
+  .ticker span.warn{ color:var(--cyan); }
+  @keyframes ticker-scroll{
+    0%   { transform:translateX(0%); }
+    100% { transform:translateX(-50%); }
+  }
+
+  /* ---------------- GRID / CARDS ---------------- */
+  .grid{ display:grid; grid-template-columns: 1.15fr .85fr; gap:22px; margin-top:26px; }
+  @media (max-width: 880px){ .grid{ grid-template-columns: 1fr; } }
+
+  .panel{
+    position:relative;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border:1px solid var(--line);
+    padding:22px;
+    clip-path: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+  }
+  /* HUD corner brackets */
+  .panel::before, .panel::after{
+    content:""; position:absolute; width:16px; height:16px;
+    border-color:var(--cyan); border-style:solid; opacity:.8;
+  }
+  .panel::before{ top:-1px; left:-1px; border-width:2px 0 0 2px; }
+  .panel::after{ bottom:-1px; right:-1px; border-width:0 2px 2px 0; }
+
+  .panel h2{
+    font-family: var(--font-display);
+    font-size: .92rem; letter-spacing:.12em; font-weight:700;
+    color: var(--text); text-transform:uppercase;
+    display:flex; align-items:center; gap:10px;
+    padding-bottom:12px; margin-bottom:16px; border-bottom:1px solid var(--line);
+  }
+  .panel h2::before{
+    content:""; width:8px; height:8px; background:var(--cyan);
+    box-shadow:0 0 10px var(--cyan); flex-shrink:0;
+  }
+
+  /* ---------------- TABLE ---------------- */
+  table{ width:100%; border-collapse:collapse; font-size:.82rem; }
+  thead th{
+    text-align:left; padding:6px 10px; font-size:.66rem; letter-spacing:.1em;
+    color:var(--muted); text-transform:uppercase; font-weight:500;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{ padding:10px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tbody tr{ transition: background .15s ease; cursor:pointer; }
+  tbody tr:hover{ background: rgba(0,229,255,.05); }
+  tbody tr.active{ background: rgba(124,77,255,.08); }
+  tbody tr.active td:first-child{ box-shadow: inset 3px 0 0 var(--violet); }
+
+  .sym{ font-family: var(--font-display); font-weight:700; letter-spacing:.03em; }
+
+  .pct-up{ color:var(--green); }
+  .pct-down{ color:var(--red); }
+
+  .score-cell{ display:flex; align-items:center; gap:8px; }
+  .score-bar{ position:relative; width:56px; height:5px; background:var(--line); overflow:hidden; }
+  .score-bar i{ position:absolute; inset:0; background:linear-gradient(90deg,var(--violet),var(--cyan)); }
+
+  .btn-analisar{
+    font-family: var(--font-mono); font-size:.68rem; letter-spacing:.08em;
+    background:transparent; color:var(--cyan); border:1px solid var(--cyan);
+    padding:5px 10px; cursor:pointer; transition: all .15s ease;
+    text-transform:uppercase;
+  }
+  .btn-analisar::before{ content:"› "; }
+  .btn-analisar:hover{ background:var(--cyan); color:var(--void); box-shadow:0 0 14px rgba(0,229,255,.5); }
+
+  /* ---------------- DETAIL PANEL ---------------- */
+  .placeholder{ color:var(--muted); font-size:.82rem; line-height:1.6; }
+  .placeholder::before{ content:"> "; color:var(--cyan); }
+
+  .scanning{ color:var(--cyan); font-size:.82rem; }
+  .scanning::after{ content:"_"; animation: blink 1s step-end infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  .field{
+    display:flex; justify-content:space-between; gap:10px;
+    padding:9px 0; border-bottom:1px dashed var(--line);
+    font-size:.82rem;
+  }
+  .field .label{ color:var(--muted); font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; }
+  .field .value{ text-align:right; color:var(--text); }
+  .field .value a{ color:var(--cyan); text-decoration:none; }
+  .field .value a:hover{ text-decoration:underline; }
+
+  .err{ color:var(--red); font-size:.85rem; }
+  .err::before{ content:"⚠ "; }
+
+  /* ---------------- NEWS ---------------- */
+  .news-panel{ margin-top:22px; }
+  .news-item{
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .news-item:last-child{ border-bottom:none; }
+  .news-item a{
+    color: var(--text); text-decoration:none; font-size:.82rem; line-height:1.4;
+    display:block; margin-bottom:5px;
+  }
+  .news-item a:hover{ color:var(--cyan); }
+  .news-meta{ font-size:.66rem; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; }
+  .news-meta .src{ color:var(--violet); }
+
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <div class="topbar">
+    <div class="eyebrow">On-chain Intelligence Feed</div>
+    <h1>CRYPTO SCANNER</h1>
+    <div class="subtitle">Screener em tempo real · Raio-X de protocolos · Cobertura de notícias</div>
+  </div>
+
+  <div class="ticker-wrap">
+    <div class="ticker" id="ticker">
+      <span>● DEFILLAMA LINK ATIVO</span>
+      <span class="warn">◆ ATUALIZANDO SCORES</span>
+      <span>● FEED DE NOTÍCIAS ONLINE</span>
+      <span class="warn">◆ AGUARDANDO SELEÇÃO</span>
+      <span>● DEFILLAMA LINK ATIVO</span>
+      <span class="warn">◆ ATUALIZANDO SCORES</span>
+      <span>● FEED DE NOTÍCIAS ONLINE</span>
+      <span class="warn">◆ AGUARDANDO SELEÇÃO</span>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- SCREENER -->
+    <div class="panel">
+      <h2>Top Oportunidades // Screener</h2>
+      <canvas id="chartScore" height="130"></canvas>
+
+      <table id="tabelaRanking">
+        <thead>
+          <tr>
+            <th>Ativo</th>
+            <th>7d</th>
+            <th>Score</th>
+            <th>Scan</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- DETALHE + NOTÍCIAS -->
+    <div>
+      <div class="panel">
+        <h2>Raio-X Aprofundado</h2>
+        <div id="detalhesCripto">
+          <p class="placeholder">Selecione um ativo na tabela ao lado para iniciar o scan.</p>
+        </div>
+      </div>
+
+      <div class="panel news-panel">
+        <h2>Feed de Notícias</h2>
+        <div id="noticiasCripto">
+          <p class="placeholder">Nenhum ativo selecionado ainda.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let chartInstance = null;
+
+  async function carregarScreener() {
+    const res = await fetch('/api/screener');
+    const dados = await res.json();
+
+    const labels = dados.map(item => item.simbolo);
+    const scores = dados.map(item => item.score);
+    const maxScore = Math.max(...scores.map(s => Math.abs(s)), 1);
+
+    const tbody = document.querySelector('#tabelaRanking tbody');
+    tbody.innerHTML = '';
+    dados.forEach(item => {
+      const pctClass = item.crescimento_7d >= 0 ? 'pct-up' : 'pct-down';
+      const barWidth = Math.min(100, Math.abs(item.score) / maxScore * 100);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="sym">${item.simbolo}</td>
+        <td class="${pctClass}">${item.crescimento_7d}%</td>
+        <td>
+          <div class="score-cell">
+            <span>${item.score}</span>
+            <div class="score-bar"><i style="width:${barWidth}%"></i></div>
+          </div>
+        </td>
+        <td><button class="btn-analisar" type="button">Analisar</button></td>
+      `;
+      tr.addEventListener('click', () => selecionarLinha(tr, item.slug, item.simbolo));
+      tr.querySelector('.btn-analisar').addEventListener('click', (e) => {
+        e.stopPropagation();
+        selecionarLinha(tr, item.slug, item.simbolo);
+      });
+      tbody.appendChild(tr);
+    });
+
+    const ctx = document.getElementById('chartScore').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Score de Potencial',
+          data: scores,
+          backgroundColor: '#00e5ff',
+          borderRadius: 2,
+          maxBarThickness: 26
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { grid: { color: '#1b2740' }, ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 } } },
+          x: { grid: { color: '#1b2740' }, ticks: { color: '#5b6b8c', font: { family: 'JetBrains Mono', size: 10 } } }
+        }
+      }
+    });
+  }
+
+  function selecionarLinha(tr, slug, simbolo) {
+    document.querySelectorAll('#tabelaRanking tbody tr').forEach(row => row.classList.remove('active'));
+    tr.classList.add('active');
+    carregarDetalhes(slug);
+    carregarNoticias(simbolo);
+  }
+
+  async function carregarDetalhes(slug) {
+    const div = document.getElementById('detalhesCripto');
+    div.innerHTML = '<p class="scanning">Escaneando protocolo</p>';
+
+    try {
+      const res = await fetch(`/api/analisar/${slug}`);
+      const info = await res.json();
+
+      if (!info.sucesso) {
+        div.innerHTML = `<p class="err">${info.erro || 'Falha ao carregar dados.'}</p>`;
+        return;
+      }
+
+      const tvlFormatado = (info.tvl_atual || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'USD' });
+
+      div.innerHTML = `
+        <div class="field"><span class="label">Nome Oficial</span><span class="value">${info.nome ?? '—'}</span></div>
+        <div class="field"><span class="label">Categoria</span><span class="value">${info.categoria ?? '—'}</span></div>
+        <div class="field"><span class="label">Blockchain</span><span class="value">${info.chain ?? '—'}</span></div>
+        <div class="field"><span class="label">TVL Atual</span><span class="value">${tvlFormatado}</span></div>
+        <div class="field"><span class="label">Twitter</span><span class="value">${info.twitter ? '@' + info.twitter : 'N/A'}</span></div>
+        <div class="field"><span class="label">Site Oficial</span><span class="value"><a href="${info.site}" target="_blank" rel="noopener">${info.site ?? '—'}</a></span></div>
+      `;
+    } catch (e) {
+      div.innerHTML = `<p class="err">Erro de conexão com o backend.</p>`;
+    }
+  }
+
+  async function carregarNoticias(simbolo) {
+    const div = document.getElementById('noticiasCripto');
+    div.innerHTML = '<p class="scanning">Buscando cobertura</p>';
+
+    try {
+      const res = await fetch(`/api/noticias/${simbolo}`);
+      const info = await res.json();
+
+      if (!info.noticias || info.noticias.length === 0) {
+        div.innerHTML = '<p class="placeholder">Nenhuma notícia recente encontrada para este ativo.</p>';
+        return;
+      }
+
+      div.innerHTML = info.noticias.map(n => `
+        <div class="news-item">
+          <a href="${n.url}" target="_blank" rel="noopener">${n.titulo}</a>
+          <div class="news-meta"><span class="src">${n.fonte}</span></div>
+        </div>
+      `).join('');
+    } catch (e) {
+      div.innerHTML = '<p class="err">Erro ao buscar notícias.</p>';
+    }
+  }
+
+  carregarScreener();
+</script>
+
+</body>
+</html>

@@ -10,11 +10,9 @@ load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-# Modelo padrão do SDK oficial
-MODELO_GEMINI = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-
+MODELO_GEMINI = "gemini-3.6-flash"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+MODELO_OPENROUTER_FALLBACK = "google/gemma-4-31b-it:free"
 
 CRYPTOPANIC_TOKEN = os.environ.get("CRYPTOPANIC_TOKEN", "")
 
@@ -96,7 +94,7 @@ def analisar_sentimento(noticias, simbolo):
         f"Manchetes:\n{titulos}"
     )
 
-    # --- Tentativa 1: SDK Oficial do Gemini (google-genai) ---
+    # --- Tentativa 1: SDK Oficial do Gemini ---
     if client:
         try:
             response = client.models.generate_content(
@@ -116,7 +114,7 @@ def analisar_sentimento(noticias, simbolo):
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
             body = {
-                "model": OPENROUTER_MODEL,
+                "model": MODELO_OPENROUTER_FALLBACK,
                 "messages": [{"role": "user", "content": prompt}],
             }
             res = requests.post(url, json=body, headers=headers, timeout=20)
@@ -126,12 +124,12 @@ def analisar_sentimento(noticias, simbolo):
                 if parsed:
                     parsed["fonte_ia"] = "openrouter"
                     return parsed
-        except (requests.exceptions.RequestException, KeyError, IndexError):
+        except Exception:
             pass
 
     return {
         "sentimento": "indisponivel",
-        "resumo": "IA indisponível (verifique se GEMINI_API_KEY está configurada na Railway).",
+        "resumo": "IA indisponível (verifique GEMINI_API_KEY no Railway).",
         "fonte_ia": None,
     }
 

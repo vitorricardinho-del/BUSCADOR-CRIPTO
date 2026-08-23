@@ -193,7 +193,7 @@
   .err{ color:var(--red); font-size:.85rem; }
   .err::before{ content:"⚠ "; }
 
-  /* ---------------- NEWS ---------------- */
+  /* ---------------- NEWS & SENTIMENT ---------------- */
   .news-panel{ margin-top:22px; }
   .news-item{
     padding:12px 0; border-bottom:1px solid var(--line);
@@ -209,10 +209,11 @@
 
   .sentiment-card{
     border:1px solid var(--line); padding:14px; margin-bottom:16px;
-    display:flex; gap:12px; align-items:flex-start;
+    display:flex; gap:12px; align-items:flex-start; background: rgba(10, 15, 28, 0.6);
   }
   .sentiment-card.bullish{ border-color: rgba(0,255,157,.4); }
   .sentiment-card.bearish{ border-color: rgba(255,61,90,.4); }
+  .sentiment-card.neutro{ border-color: rgba(91,107,140,.4); }
   .sentiment-dot{ width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
   .sentiment-dot.bullish{ background:var(--green); box-shadow:0 0 10px var(--green); }
   .sentiment-dot.bearish{ background:var(--red); box-shadow:0 0 10px var(--red); }
@@ -374,7 +375,27 @@
 
       const tvlFormatado = (info.tvl_atual || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'USD' });
 
+      // Monta o Card de Análise da IA
+      let htmlIA = '';
+      if (info.analise_ia) {
+        const s = info.analise_ia.sentimento ? info.analise_ia.sentimento.toLowerCase() : 'indisponivel';
+        const label = { bullish: 'BULLISH', bearish: 'BEARISH', neutro: 'NEUTRO' }[s] || 'INDISPONÍVEL';
+        const fonte = info.analise_ia.fonte_ia ? `via ${info.analise_ia.fonte_ia}` : '';
+
+        htmlIA = `
+          <div class="sentiment-card ${s}">
+            <div class="sentiment-dot ${s}"></div>
+            <div>
+              <div class="sentiment-label ${s}">${label}</div>
+              <div class="sentiment-summary">${info.analise_ia.resumo}</div>
+              <div class="sentiment-src">Análise Inteligente ${fonte}</div>
+            </div>
+          </div>
+        `;
+      }
+
       div.innerHTML = `
+        ${htmlIA}
         <div class="field"><span class="label">Nome Oficial</span><span class="value">${info.nome ?? '—'}</span></div>
         <div class="field"><span class="label">Categoria</span><span class="value">${info.categoria ?? '—'}</span></div>
         <div class="field"><span class="label">Blockchain</span><span class="value">${info.chain ?? '—'}</span></div>
@@ -395,37 +416,18 @@
       const res = await fetch(`/api/noticias/${simbolo}`);
       const info = await res.json();
 
-      let html = '';
-
-      if (info.analise_ia && info.analise_ia.fonte_ia) {
-        const s = info.analise_ia.sentimento;
-        const label = { bullish: 'BULLISH', bearish: 'BEARISH', neutro: 'NEUTRO' }[s] || 'INDISPONÍVEL';
-        html += `
-          <div class="sentiment-card ${s}">
-            <div class="sentiment-dot ${s}"></div>
-            <div>
-              <div class="sentiment-label ${s}">${label}</div>
-              <div class="sentiment-summary">${info.analise_ia.resumo}</div>
-              <div class="sentiment-src">Análise via ${info.analise_ia.fonte_ia}</div>
-            </div>
-          </div>
-        `;
-      }
-
       if (!info.noticias || info.noticias.length === 0) {
-        html += '<p class="placeholder">Nenhuma notícia recente encontrada para este ativo.</p>';
-        div.innerHTML = html;
+        div.innerHTML = '<p class="placeholder">Nenhuma notícia recente encontrada para este ativo.</p>';
         return;
       }
 
-      html += info.noticias.map(n => `
+      div.innerHTML = info.noticias.map(n => `
         <div class="news-item">
           <a href="${n.url}" target="_blank" rel="noopener">${n.titulo}</a>
           <div class="news-meta"><span class="src">${n.fonte}</span></div>
         </div>
       `).join('');
 
-      div.innerHTML = html;
     } catch (e) {
       div.innerHTML = '<p class="err">Erro ao buscar notícias.</p>';
     }

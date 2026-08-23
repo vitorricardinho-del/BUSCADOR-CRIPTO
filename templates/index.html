@@ -207,6 +207,24 @@
   .news-meta{ font-size:.66rem; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; }
   .news-meta .src{ color:var(--violet); }
 
+  .sentiment-card{
+    border:1px solid var(--line); padding:14px; margin-bottom:16px;
+    display:flex; gap:12px; align-items:flex-start;
+  }
+  .sentiment-card.bullish{ border-color: rgba(0,255,157,.4); }
+  .sentiment-card.bearish{ border-color: rgba(255,61,90,.4); }
+  .sentiment-dot{ width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }
+  .sentiment-dot.bullish{ background:var(--green); box-shadow:0 0 10px var(--green); }
+  .sentiment-dot.bearish{ background:var(--red); box-shadow:0 0 10px var(--red); }
+  .sentiment-dot.neutro{ background:var(--muted); }
+  .sentiment-dot.indisponivel{ background:var(--line); }
+  .sentiment-label{ font-family: var(--font-display); font-size:.75rem; letter-spacing:.1em; margin-bottom:4px; }
+  .sentiment-label.bullish{ color:var(--green); }
+  .sentiment-label.bearish{ color:var(--red); }
+  .sentiment-label.neutro{ color:var(--muted); }
+  .sentiment-summary{ font-size:.78rem; color:var(--text); line-height:1.5; }
+  .sentiment-src{ font-size:.62rem; color:var(--muted); margin-top:6px; text-transform:uppercase; letter-spacing:.06em; }
+
 </style>
 </head>
 <body>
@@ -377,17 +395,37 @@
       const res = await fetch(`/api/noticias/${simbolo}`);
       const info = await res.json();
 
+      let html = '';
+
+      if (info.analise_ia && info.analise_ia.fonte_ia) {
+        const s = info.analise_ia.sentimento;
+        const label = { bullish: 'BULLISH', bearish: 'BEARISH', neutro: 'NEUTRO' }[s] || 'INDISPONÍVEL';
+        html += `
+          <div class="sentiment-card ${s}">
+            <div class="sentiment-dot ${s}"></div>
+            <div>
+              <div class="sentiment-label ${s}">${label}</div>
+              <div class="sentiment-summary">${info.analise_ia.resumo}</div>
+              <div class="sentiment-src">Análise via ${info.analise_ia.fonte_ia}</div>
+            </div>
+          </div>
+        `;
+      }
+
       if (!info.noticias || info.noticias.length === 0) {
-        div.innerHTML = '<p class="placeholder">Nenhuma notícia recente encontrada para este ativo.</p>';
+        html += '<p class="placeholder">Nenhuma notícia recente encontrada para este ativo.</p>';
+        div.innerHTML = html;
         return;
       }
 
-      div.innerHTML = info.noticias.map(n => `
+      html += info.noticias.map(n => `
         <div class="news-item">
           <a href="${n.url}" target="_blank" rel="noopener">${n.titulo}</a>
           <div class="news-meta"><span class="src">${n.fonte}</span></div>
         </div>
       `).join('');
+
+      div.innerHTML = html;
     } catch (e) {
       div.innerHTML = '<p class="err">Erro ao buscar notícias.</p>';
     }

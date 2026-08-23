@@ -2,12 +2,16 @@ import os
 import sys
 import requests
 from dotenv import load_dotenv
+from google import genai
 
 load_dotenv()
 
-# --- Config de IA ---
+# --- Config de IA (Cliente Oficial Google GenAI) ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+# Modelo padrão do SDK oficial
+MODELO_GEMINI = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
@@ -79,7 +83,7 @@ def buscar_noticias(simbolo, limite=5):
 
 
 def analisar_sentimento(noticias, simbolo):
-    """Manda as notícias para uma IA resumir e classificar o sentimento."""
+    """Manda as notícias para a IA do Gemini (ou OpenRouter fallback) resumir e analisar."""
     if not noticias:
         return {"sentimento": "indisponivel", "resumo": "Sem notícias suficientes para análise.", "fonte_ia": None}
 
@@ -92,23 +96,21 @@ def analisar_sentimento(noticias, simbolo):
         f"Manchetes:\n{titulos}"
     )
 
-    if GEMINI_API_KEY:
+    # --- Tentativa 1: SDK Oficial do Gemini (google-genai) ---
+    if client:
         try:
-            url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+            response = client.models.generate_content(
+                model=MODELO_GEMINI,
+                contents=prompt
             )
-            body = {"contents": [{"parts": [{"text": prompt}]}]}
-            res = requests.post(url, json=body, timeout=20)
-            if res.status_code == 200:
-                texto = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-                parsed = _parsear_json_ia(texto)
-                if parsed:
-                    parsed["fonte_ia"] = "gemini"
-                    return parsed
-        except (requests.exceptions.RequestException, KeyError, IndexError):
+            parsed = _parsear_json_ia(response.text)
+            if parsed:
+                parsed["fonte_ia"] = "gemini"
+                return parsed
+        except Exception:
             pass
 
+    # --- Fallback: OpenRouter ---
     if OPENROUTER_API_KEY:
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -129,7 +131,7 @@ def analisar_sentimento(noticias, simbolo):
 
     return {
         "sentimento": "indisponivel",
-        "resumo": "IA indisponível (verifique GEMINI_API_KEY no Railway).",
+        "resumo": "IA indisponível (verifique se GEMINI_API_KEY está configurada na Railway).",
         "fonte_ia": None,
     }
 

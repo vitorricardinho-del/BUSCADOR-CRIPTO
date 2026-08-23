@@ -3,6 +3,8 @@ import sys
 import requests
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
+
 
 load_dotenv()
 
@@ -83,6 +85,7 @@ def buscar_noticias(simbolo, limite=5):
 def analisar_sentimento(noticias, simbolo):
     """Manda as notícias para a IA do Gemini (ou OpenRouter fallback) resumir e analisar."""
     if not noticias:
+        print(f"DEBUG: Nenhuma notícia encontrada para {simbolo}. IA não foi acionada.")
         return {"sentimento": "indisponivel", "resumo": "Sem notícias suficientes para análise.", "fonte_ia": None}
 
     titulos = "\n".join(f"- {n['titulo']}" for n in noticias if n.get("titulo"))
@@ -97,35 +100,46 @@ def analisar_sentimento(noticias, simbolo):
     # --- Tentativa 1: SDK Oficial do Gemini ---
     if client:
         try:
+            print(f"DEBUG: Tentando análise via Gemini ({MODELO_GEMINI})...")
             response = client.models.generate_content(
                 model=MODELO_GEMINI,
-                contents=prompt
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                )
             )
+            print(f"DEBUG GEMINI RESPOSTA -> {response.text}")
+
             parsed = _parsear_json_ia(response.text)
             if parsed:
                 parsed["fonte_ia"] = "gemini"
                 return parsed
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"DEBUG ERRO GEMINI -> {e}")
 
     # --- Fallback: OpenRouter ---
     if OPENROUTER_API_KEY:
         try:
+            print(f"DEBUG: Tentando análise via OpenRouter ({MODELO_OPENROUTER_FALLBACK})...")
             url = "https://openrouter.ai/api/v1/chat/completions"
             headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
             body = {
                 "model": MODELO_OPENROUTER_FALLBACK,
                 "messages": [{"role": "user", "content": prompt}],
+                "response_format": {"type": "json_object"}
             }
             res = requests.post(url, json=body, headers=headers, timeout=20)
             if res.status_code == 200:
                 texto = res.json()["choices"][0]["message"]["content"]
+                print(f"DEBUG OPENROUTER RESPOSTA -> {texto}")
                 parsed = _parsear_json_ia(texto)
                 if parsed:
                     parsed["fonte_ia"] = "openrouter"
                     return parsed
-        except Exception:
-            pass
+            else:
+                print(f"DEBUG ERRO OPENROUTER -> Status {res.status_code}: {res.text}")
+        except Exception as e:
+            print(f"DEBUG EXCEÇÃO OPENROUTER -> {e}")
 
     return {
         "sentimento": "indisponivel",

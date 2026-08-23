@@ -12,7 +12,7 @@ load_dotenv()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-MODELO_GEMINI = "gemini-3.6-flash"
+MODELO_GEMINI = "gemini-2.5-flash"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 MODELO_OPENROUTER_FALLBACK = "google/gemma-4-31b-it:free"
 

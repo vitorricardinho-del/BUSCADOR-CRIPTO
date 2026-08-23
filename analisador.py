@@ -1,10 +1,15 @@
 import os
 import sys
 import requests
+from dotenv import load_dotenv
+
+# Carrega o .env se estiver rodando localmente no terminal
+load_dotenv()
 
 # --- Config de IA (análise de sentimento das notícias) ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+# Corrigido para modelo oficial ativo
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
@@ -91,6 +96,7 @@ def analisar_sentimento(noticias, simbolo):
         f"Manchetes:\n{titulos}"
     )
 
+    # --- Tentativa 1: Gemini ---
     if GEMINI_API_KEY:
         try:
             url = (
@@ -108,6 +114,7 @@ def analisar_sentimento(noticias, simbolo):
         except (requests.exceptions.RequestException, KeyError, IndexError):
             pass
 
+    # --- Fallback: OpenRouter ---
     if OPENROUTER_API_KEY:
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"

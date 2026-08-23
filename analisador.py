@@ -9,20 +9,11 @@ GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
 
-# Token grátis: crie em https://cryptopanic.com/developers/api/keys
-# Pode setar via variável de ambiente ou colar direto aqui (não recomendado
-# em código versionado - prefira env var no Railway).
 CRYPTOPANIC_TOKEN = os.environ.get("CRYPTOPANIC_TOKEN", "")
 
 
 def buscar_noticias(simbolo, limite=5):
-    """
-    Busca notícias recentes sobre uma cripto.
-    Tenta CryptoPanic primeiro (precisa de token grátis); se não tiver
-    token ou a chamada falhar, cai pro CryptoCompare News API (público,
-    sem necessidade de chave).
-    Retorna sempre uma lista de dicts: [{titulo, fonte, url, data}, ...]
-    """
+    """Busca notícias recentes sobre uma cripto."""
     simbolo = simbolo.upper()
     noticias = []
 
@@ -48,15 +39,11 @@ def buscar_noticias(simbolo, limite=5):
                 if noticias:
                     return noticias
         except requests.exceptions.RequestException:
-            pass  # cai pro fallback
+            pass
 
-    # --- Fallback: CryptoCompare (público, sem token) ---
+    # --- Fallback: CryptoCompare ---
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/"
-
-        # Tentativa A: filtro por categoria (só cobre moedas grandes tipo
-        # BTC, ETH, XRP, SOL - moedas menores como AAVE não têm categoria
-        # dedicada e vêm sempre vazias por esse filtro)
         params = {"categories": simbolo, "excludeCategories": "Sponsored"}
         res = requests.get(url, params=params, timeout=10)
         if res.status_code == 200:
@@ -69,8 +56,6 @@ def buscar_noticias(simbolo, limite=5):
                     "data": item.get("published_on"),
                 })
 
-        # Tentativa B: se a categoria não trouxe nada, busca no feed geral
-        # e filtra por palavra-chave no título (cobre moedas menores)
         if not noticias:
             res_geral = requests.get(url, params={"excludeCategories": "Sponsored"}, timeout=10)
             if res_geral.status_code == 200:
@@ -93,13 +78,7 @@ def buscar_noticias(simbolo, limite=5):
 
 
 def analisar_sentimento(noticias, simbolo):
-    """
-    Manda a lista de notícias já buscadas pra uma IA resumir e classificar
-    o sentimento geral (bullish/bearish/neutro). Tenta Gemini primeiro,
-    cai pro OpenRouter se falhar - mesmo padrão usado no resto do projeto.
-    Retorna sempre um dict: {sentimento, resumo, fonte_ia} - fonte_ia
-    fica None se nenhuma IA respondeu (ex: sem chave configurada).
-    """
+    """Manda as notícias para uma IA resumir e classificar o sentimento."""
     if not noticias:
         return {"sentimento": "indisponivel", "resumo": "Sem notícias suficientes para análise.", "fonte_ia": None}
 
@@ -112,7 +91,6 @@ def analisar_sentimento(noticias, simbolo):
         f"Manchetes:\n{titulos}"
     )
 
-    # --- Tentativa 1: Gemini ---
     if GEMINI_API_KEY:
         try:
             url = (
@@ -128,9 +106,8 @@ def analisar_sentimento(noticias, simbolo):
                     parsed["fonte_ia"] = "gemini"
                     return parsed
         except (requests.exceptions.RequestException, KeyError, IndexError):
-            pass  # cai pro fallback
+            pass
 
-    # --- Fallback: OpenRouter ---
     if OPENROUTER_API_KEY:
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -168,10 +145,12 @@ def _parsear_json_ia(texto):
         }
     except (json.JSONDecodeError, AttributeError):
         return None
+
+
+def analisar_cripto_detalhada(simbolo):
     """
     Busca dados detalhados de um protocolo no DefiLlama.
-    Retorna sempre um dict (mesmo em erro), pra poder ser usado
-    tanto via CLI (monitor.py) quanto via API (app.py).
+    Retorna sempre um dict para o CLI ou para o app.py.
     """
     resultado = {
         "simbolo": simbolo.upper(),
@@ -193,17 +172,11 @@ def _parsear_json_ia(texto):
 
         if res.status_code == 200:
             dados = res.json()
-
-            # IMPORTANTE: nesse endpoint (singular /protocol/{slug}),
-            # 'tvl' vem como uma LISTA de históricos
-            # [{"date": ..., "totalLiquidityUSD": ...}, ...]
-            # e não como um número, ao contrário do /protocols (plural).
             tvl_historico = dados.get("tvl", [])
             tvl_atual = 0
             if isinstance(tvl_historico, list) and tvl_historico:
                 tvl_atual = tvl_historico[-1].get("totalLiquidityUSD", 0)
             elif isinstance(tvl_historico, (int, float)):
-                # fallback, caso a API mude o formato no futuro
                 tvl_atual = tvl_historico
 
             resultado.update({
@@ -218,8 +191,6 @@ def _parsear_json_ia(texto):
         else:
             resultado["erro"] = f"Métricas não encontradas para '{simbolo}' (status {res.status_code})"
 
-        # Notícias busca independente do sucesso das métricas -
-        # às vezes o protocolo não tem TVL mas tem cobertura de notícia
         resultado["noticias"] = buscar_noticias(simbolo)
         resultado["analise_ia"] = analisar_sentimento(resultado["noticias"], simbolo)
 
@@ -266,7 +237,6 @@ def imprimir_relatorio(dados):
 
 
 if __name__ == '__main__':
-    # Permite executar diretamente pelo terminal: python analisador.py SOL
     if len(sys.argv) > 1:
         cripto_escolhida = sys.argv[1]
     else:

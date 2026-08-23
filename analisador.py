@@ -2,6 +2,13 @@ import os
 import sys
 import requests
 
+# --- Config de IA (análise de sentimento das notícias) ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
+
 # Token grátis: crie em https://cryptopanic.com/developers/api/keys
 # Pode setar via variável de ambiente ou colar direto aqui (não recomendado
 # em código versionado - prefira env var no Railway).
@@ -85,7 +92,82 @@ def buscar_noticias(simbolo, limite=5):
     return noticias
 
 
-def analisar_cripto_detalhada(simbolo):
+def analisar_sentimento(noticias, simbolo):
+    """
+    Manda a lista de notícias já buscadas pra uma IA resumir e classificar
+    o sentimento geral (bullish/bearish/neutro). Tenta Gemini primeiro,
+    cai pro OpenRouter se falhar - mesmo padrão usado no resto do projeto.
+    Retorna sempre um dict: {sentimento, resumo, fonte_ia} - fonte_ia
+    fica None se nenhuma IA respondeu (ex: sem chave configurada).
+    """
+    if not noticias:
+        return {"sentimento": "indisponivel", "resumo": "Sem notícias suficientes para análise.", "fonte_ia": None}
+
+    titulos = "\n".join(f"- {n['titulo']}" for n in noticias if n.get("titulo"))
+    prompt = (
+        f"Analise estas manchetes recentes sobre {simbolo.upper()} e responda "
+        f"APENAS em JSON, sem markdown, sem texto antes ou depois, no formato:\n"
+        f'{{"sentimento": "bullish|bearish|neutro", "resumo": "1-2 frases em '
+        f'português explicando o porquê"}}\n\n'
+        f"Manchetes:\n{titulos}"
+    )
+
+    # --- Tentativa 1: Gemini ---
+    if GEMINI_API_KEY:
+        try:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+            )
+            body = {"contents": [{"parts": [{"text": prompt}]}]}
+            res = requests.post(url, json=body, timeout=20)
+            if res.status_code == 200:
+                texto = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = _parsear_json_ia(texto)
+                if parsed:
+                    parsed["fonte_ia"] = "gemini"
+                    return parsed
+        except (requests.exceptions.RequestException, KeyError, IndexError):
+            pass  # cai pro fallback
+
+    # --- Fallback: OpenRouter ---
+    if OPENROUTER_API_KEY:
+        try:
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
+            body = {
+                "model": OPENROUTER_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+            }
+            res = requests.post(url, json=body, headers=headers, timeout=20)
+            if res.status_code == 200:
+                texto = res.json()["choices"][0]["message"]["content"]
+                parsed = _parsear_json_ia(texto)
+                if parsed:
+                    parsed["fonte_ia"] = "openrouter"
+                    return parsed
+        except (requests.exceptions.RequestException, KeyError, IndexError):
+            pass
+
+    return {
+        "sentimento": "indisponivel",
+        "resumo": "IA indisponível (verifique GEMINI_API_KEY / OPENROUTER_API_KEY).",
+        "fonte_ia": None,
+    }
+
+
+def _parsear_json_ia(texto):
+    """Extrai o JSON da resposta da IA, removendo markdown fences se houver."""
+    import json
+    limpo = texto.strip().replace("```json", "").replace("```", "").strip()
+    try:
+        dados = json.loads(limpo)
+        return {
+            "sentimento": dados.get("sentimento", "neutro"),
+            "resumo": dados.get("resumo", ""),
+        }
+    except (json.JSONDecodeError, AttributeError):
+        return None
     """
     Busca dados detalhados de um protocolo no DefiLlama.
     Retorna sempre um dict (mesmo em erro), pra poder ser usado
@@ -102,6 +184,7 @@ def analisar_cripto_detalhada(simbolo):
         "tvl_atual": 0,
         "erro": None,
         "noticias": [],
+        "analise_ia": None,
     }
 
     try:
@@ -138,6 +221,7 @@ def analisar_cripto_detalhada(simbolo):
         # Notícias busca independente do sucesso das métricas -
         # às vezes o protocolo não tem TVL mas tem cobertura de notícia
         resultado["noticias"] = buscar_noticias(simbolo)
+        resultado["analise_ia"] = analisar_sentimento(resultado["noticias"], simbolo)
 
     except requests.exceptions.RequestException as e:
         resultado["erro"] = f"Erro de conexão: {e}"
@@ -173,6 +257,12 @@ def imprimir_relatorio(dados):
             print(f"   {n['url']}")
     else:
         print(" └─ Nenhuma notícia encontrada (ou CRYPTOPANIC_TOKEN não configurado).\n")
+
+    if dados.get("analise_ia"):
+        ia = dados["analise_ia"]
+        emoji = {"bullish": "🟢", "bearish": "🔴", "neutro": "🟡"}.get(ia["sentimento"], "⚪")
+        print(f"\n{emoji} Sentimento (IA - {ia.get('fonte_ia') or 'indisponível'}): {ia['sentimento'].upper()}")
+        print(f"   {ia['resumo']}")
 
 
 if __name__ == '__main__':

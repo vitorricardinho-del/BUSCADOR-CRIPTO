@@ -1,51 +1,53 @@
 import os
 import sys
+import time
 import requests
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-
+from google.genai.errors import ClientError, ServerError
 
 load_dotenv()
 
-# --- Config de IA (Cliente Oficial Google GenAI) ---
+# --- Configurações de API & Variáveis de Ambiente ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# Cliente oficial do Google GenAI
 client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-MODELO_GEMINI = "gemini-2.5-flash"
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-MODELO_OPENROUTER_FALLBACK = "google/gemma-4-31b-it:free"
+MODELO_GEMINI = "gemini-3.6-flash"
+GEMINI_TIMEOUT_MS = 25_000
 
-CRYPTOPANIC_TOKEN = os.environ.get("CRYPTOPANIC_TOKEN", "")
+
+def chamar_gemini_com_retry(prompt, tentativas=3):
+    """Executa a chamada ao Gemini com suporte a retry e backoff exponencial."""
+    ultimo_erro = None
+    for tentativa in range(tentativas):
+        try:
+            return client.models.generate_content(
+                model=MODELO_GEMINI,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+                )
+            )
+        except (ClientError, ServerError) as e:
+            ultimo_erro = e
+            if tentativa < tentativas - 1:
+                espera = 2 ** tentativa
+                print(f"⚠️ Gemini falhou (tentativa {tentativa + 1}/{tentativas}). Aguardando {espera}s... Erro: {e}")
+                time.sleep(espera)
+            else:
+                print(f"❌ Gemini indisponível após {tentativas} tentativas: {e}")
+
+    raise ultimo_erro
 
 
 def buscar_noticias(simbolo, limite=5):
-    """Busca notícias recentes sobre uma cripto."""
+    """Busca notícias recentes sobre a criptomoeda via CryptoCompare."""
     simbolo = simbolo.upper()
     noticias = []
-
-    if CRYPTOPANIC_TOKEN:
-        try:
-            url = "https://cryptopanic.com/api/v2/posts/"
-            params = {
-                "auth_token": CRYPTOPANIC_TOKEN,
-                "currencies": simbolo,
-                "public": "true",
-            }
-            res = requests.get(url, params=params, timeout=10)
-            if res.status_code == 200:
-                resultados = res.json().get("results", [])[:limite]
-                for item in resultados:
-                    noticias.append({
-                        "titulo": item.get("title"),
-                        "fonte": (item.get("source") or {}).get("title", "CryptoPanic"),
-                        "url": item.get("url"),
-                        "data": item.get("published_at"),
-                    })
-                if noticias:
-                    return noticias
-        except requests.exceptions.RequestException:
-            pass
 
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/"
@@ -83,73 +85,41 @@ def buscar_noticias(simbolo, limite=5):
 
 
 def analisar_sentimento(noticias, simbolo):
-    """Manda as notícias para a IA do Gemini (ou OpenRouter fallback) resumir e analisar."""
+    """Analisa o sentimento das manchetes e resume em português via Gemini."""
     if not noticias:
-        print(f"DEBUG: Nenhuma notícia encontrada para {simbolo}. IA não foi acionada.")
-        return {"sentimento": "indisponivel", "resumo": "Sem notícias suficientes para análise.", "fonte_ia": None}
+        return {
+            "sentimento": "indisponivel",
+            "resumo": "Sem notícias suficientes para análise.",
+            "fonte_ia": None
+        }
 
     titulos = "\n".join(f"- {n['titulo']}" for n in noticias if n.get("titulo"))
     prompt = (
         f"Analise estas manchetes recentes sobre {simbolo.upper()} e responda "
-        f"APENAS em JSON, sem markdown, sem texto antes ou depois, no formato:\n"
-        f'{{"sentimento": "bullish|bearish|neutro", "resumo": "1-2 frases em '
-        f'português explicando o porquê"}}\n\n'
+        f"APENAS um objeto JSON válido, sem texto antes ou depois, exatamente no formato:\n"
+        f'{{"sentimento": "bullish|bearish|neutro", "resumo": "1-2 frases em português explicando o porquê"}}\n\n'
         f"Manchetes:\n{titulos}"
     )
 
-    # --- Tentativa 1: SDK Oficial do Gemini ---
     if client:
         try:
-            print(f"DEBUG: Tentando análise via Gemini ({MODELO_GEMINI})...")
-            response = client.models.generate_content(
-                model=MODELO_GEMINI,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                )
-            )
-            print(f"DEBUG GEMINI RESPOSTA -> {response.text}")
-
+            response = chamar_gemini_com_retry(prompt)
             parsed = _parsear_json_ia(response.text)
             if parsed:
                 parsed["fonte_ia"] = "gemini"
                 return parsed
         except Exception as e:
-            print(f"DEBUG ERRO GEMINI -> {e}")
-
-    # --- Fallback: OpenRouter ---
-    if OPENROUTER_API_KEY:
-        try:
-            print(f"DEBUG: Tentando análise via OpenRouter ({MODELO_OPENROUTER_FALLBACK})...")
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}"}
-            body = {
-                "model": MODELO_OPENROUTER_FALLBACK,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"}
-            }
-            res = requests.post(url, json=body, headers=headers, timeout=20)
-            if res.status_code == 200:
-                texto = res.json()["choices"][0]["message"]["content"]
-                print(f"DEBUG OPENROUTER RESPOSTA -> {texto}")
-                parsed = _parsear_json_ia(texto)
-                if parsed:
-                    parsed["fonte_ia"] = "openrouter"
-                    return parsed
-            else:
-                print(f"DEBUG ERRO OPENROUTER -> Status {res.status_code}: {res.text}")
-        except Exception as e:
-            print(f"DEBUG EXCEÇÃO OPENROUTER -> {e}")
+            print(f"❌ Erro ao analisar sentimento via Gemini: {e}")
 
     return {
         "sentimento": "indisponivel",
-        "resumo": "IA indisponível (verifique GEMINI_API_KEY no Railway).",
-        "fonte_ia": None,
+        "resumo": "Serviço do Gemini indisponível no momento.",
+        "fonte_ia": None
     }
 
 
 def _parsear_json_ia(texto):
-    """Extrai o JSON da resposta da IA, tratando formatações com markdown."""
+    """Trata e extrai a estrutura JSON da resposta da IA."""
     import json
     limpo = texto.strip()
     if "```" in limpo:
@@ -168,7 +138,7 @@ def _parsear_json_ia(texto):
 
 
 def analisar_cripto_detalhada(simbolo):
-    """Busca dados no DefiLlama, notícias e análise da IA."""
+    """Consulta DefiLlama, notícias e gera análise completa."""
     resultado = {
         "simbolo": simbolo.upper(),
         "sucesso": False,
@@ -220,7 +190,7 @@ def analisar_cripto_detalhada(simbolo):
 
 
 def imprimir_relatorio(dados):
-    """Exibe o relatório formatado no terminal."""
+    """Imprime o raio-x formatado no terminal."""
     print(f"\n==========================================")
     print(f" 🔍 RAIO-X DETALHADO: {dados['simbolo']}")
     print(f"==========================================\n")

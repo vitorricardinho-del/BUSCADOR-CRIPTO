@@ -3,13 +3,11 @@ import sys
 import requests
 from dotenv import load_dotenv
 
-# Carrega o .env se estiver rodando localmente no terminal
 load_dotenv()
 
-# --- Config de IA (análise de sentimento das notícias) ---
+# --- Config de IA ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-# Corrigido para modelo oficial ativo
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "google/gemma-4-31b-it:free")
@@ -22,7 +20,6 @@ def buscar_noticias(simbolo, limite=5):
     simbolo = simbolo.upper()
     noticias = []
 
-    # --- Tentativa 1: CryptoPanic ---
     if CRYPTOPANIC_TOKEN:
         try:
             url = "https://cryptopanic.com/api/v2/posts/"
@@ -46,7 +43,6 @@ def buscar_noticias(simbolo, limite=5):
         except requests.exceptions.RequestException:
             pass
 
-    # --- Fallback: CryptoCompare ---
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/"
         params = {"categories": simbolo, "excludeCategories": "Sponsored"}
@@ -96,7 +92,6 @@ def analisar_sentimento(noticias, simbolo):
         f"Manchetes:\n{titulos}"
     )
 
-    # --- Tentativa 1: Gemini ---
     if GEMINI_API_KEY:
         try:
             url = (
@@ -114,7 +109,6 @@ def analisar_sentimento(noticias, simbolo):
         except (requests.exceptions.RequestException, KeyError, IndexError):
             pass
 
-    # --- Fallback: OpenRouter ---
     if OPENROUTER_API_KEY:
         try:
             url = "https://openrouter.ai/api/v1/chat/completions"
@@ -135,15 +129,20 @@ def analisar_sentimento(noticias, simbolo):
 
     return {
         "sentimento": "indisponivel",
-        "resumo": "IA indisponível (verifique GEMINI_API_KEY / OPENROUTER_API_KEY).",
+        "resumo": "IA indisponível (verifique GEMINI_API_KEY no Railway).",
         "fonte_ia": None,
     }
 
 
 def _parsear_json_ia(texto):
-    """Extrai o JSON da resposta da IA, removendo markdown fences se houver."""
+    """Extrai o JSON da resposta da IA, tratando formatações com markdown."""
     import json
-    limpo = texto.strip().replace("```json", "").replace("```", "").strip()
+    limpo = texto.strip()
+    if "```" in limpo:
+        limpo = limpo.split("```")[1]
+        if limpo.startswith("json"):
+            limpo = limpo[4:]
+    limpo = limpo.strip()
     try:
         dados = json.loads(limpo)
         return {
@@ -155,10 +154,7 @@ def _parsear_json_ia(texto):
 
 
 def analisar_cripto_detalhada(simbolo):
-    """
-    Busca dados detalhados de um protocolo no DefiLlama.
-    Retorna sempre um dict para o CLI ou para o app.py.
-    """
+    """Busca dados no DefiLlama, notícias e análise da IA."""
     resultado = {
         "simbolo": simbolo.upper(),
         "sucesso": False,
@@ -210,7 +206,7 @@ def analisar_cripto_detalhada(simbolo):
 
 
 def imprimir_relatorio(dados):
-    """Formata e imprime no terminal o dict retornado por analisar_cripto_detalhada."""
+    """Exibe o relatório formatado no terminal."""
     print(f"\n==========================================")
     print(f" 🔍 RAIO-X DETALHADO: {dados['simbolo']}")
     print(f"==========================================\n")
@@ -225,16 +221,13 @@ def imprimir_relatorio(dados):
     else:
         print(f"⚠️ {dados['erro']}")
 
-    print("\n[+] Checando Volume Social & Atividade no GitHub...")
-    print(f" └─ Status: Pronto para integrar chave de API para {dados['simbolo']}\n")
-
-    print("📰 Últimas Notícias:")
+    print("\n📰 Últimas Notícias:")
     if dados["noticias"]:
         for n in dados["noticias"]:
             print(f" • {n['titulo']} ({n['fonte']})")
             print(f"   {n['url']}")
     else:
-        print(" └─ Nenhuma notícia encontrada (ou CRYPTOPANIC_TOKEN não configurado).\n")
+        print(" └─ Nenhuma notícia encontrada.\n")
 
     if dados.get("analise_ia"):
         ia = dados["analise_ia"]

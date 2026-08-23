@@ -1,6 +1,9 @@
 import os
 import sys
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Token grátis: crie em https://cryptopanic.com/developers/api/keys
 # Pode setar via variável de ambiente ou colar direto aqui (não recomendado

@@ -1,9 +1,6 @@
 import os
 import sys
 import requests
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Token grátis: crie em https://cryptopanic.com/developers/api/keys
 # Pode setar via variável de ambiente ou colar direto aqui (não recomendado
@@ -49,6 +46,10 @@ def buscar_noticias(simbolo, limite=5):
     # --- Fallback: CryptoCompare (público, sem token) ---
     try:
         url = "https://min-api.cryptocompare.com/data/v2/news/"
+
+        # Tentativa A: filtro por categoria (só cobre moedas grandes tipo
+        # BTC, ETH, XRP, SOL - moedas menores como AAVE não têm categoria
+        # dedicada e vêm sempre vazias por esse filtro)
         params = {"categories": simbolo, "excludeCategories": "Sponsored"}
         res = requests.get(url, params=params, timeout=10)
         if res.status_code == 200:
@@ -60,6 +61,24 @@ def buscar_noticias(simbolo, limite=5):
                     "url": item.get("url"),
                     "data": item.get("published_on"),
                 })
+
+        # Tentativa B: se a categoria não trouxe nada, busca no feed geral
+        # e filtra por palavra-chave no título (cobre moedas menores)
+        if not noticias:
+            res_geral = requests.get(url, params={"excludeCategories": "Sponsored"}, timeout=10)
+            if res_geral.status_code == 200:
+                todas = res_geral.json().get("Data", [])
+                for item in todas:
+                    titulo = item.get("title", "")
+                    if simbolo.lower() in titulo.lower():
+                        noticias.append({
+                            "titulo": titulo,
+                            "fonte": item.get("source_info", {}).get("name", "CryptoCompare"),
+                            "url": item.get("url"),
+                            "data": item.get("published_on"),
+                        })
+                    if len(noticias) >= limite:
+                        break
     except requests.exceptions.RequestException:
         pass
 

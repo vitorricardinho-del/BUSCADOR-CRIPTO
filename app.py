@@ -4,7 +4,7 @@ load_dotenv()  # carrega .env em dev; no Railway as env vars já vêm setadas
 
 from flask import Flask, render_template, jsonify
 import requests
-from analisador import analisar_cripto_detalhada, buscar_noticias, analisar_sentimento
+from analisador import analisar_cripto_detalhada, buscar_noticias
 
 app = Flask(__name__)
 

@@ -4,7 +4,7 @@ load_dotenv()  # carrega .env em dev; no Railway as env vars já vêm setadas
 
 from flask import Flask, render_template, jsonify
 import requests
-from analisador import analisar_cripto_detalhada, buscar_noticias
+from analisador import analisar_cripto_detalhada, buscar_noticias, analisar_sentimento
 
 app = Flask(__name__)
 
@@ -64,11 +64,18 @@ def api_analisar(slug):
 def api_noticias(simbolo):
     try:
         noticias = buscar_noticias(simbolo)
-        return jsonify({"simbolo": simbolo.upper(), "noticias": noticias})
+        analise_ia = analisar_sentimento(noticias, simbolo)
+        return jsonify({"simbolo": simbolo.upper(), "noticias": noticias, "analise_ia": analise_ia})
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
 
 
 if __name__ == '__main__':
+    # Em produção (Railway) o gunicorn cuida de servir a aplicação -
+    # esse bloco só roda quando você executa "python app.py" localmente.
     porta = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=porta)
+
+    # host='0.0.0.0' abre o servidor pra outros dispositivos na sua rede
+    # local (ex: testar pelo celular). Com '127.0.0.1' (padrão) só sua
+    # própria máquina consegue acessar.
+    app.run(host='0.0.0.0', port=porta, debug=True)
